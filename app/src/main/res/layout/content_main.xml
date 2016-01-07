@@ -10,14 +10,11 @@
     tools:context="com.example.sachinchandil.myapplication.MainActivity"
     tools:showIn="@layout/activity_main">
 
-    <Button
-        android:id="@+id/btnPlayVideo"
+    <FrameLayout
+        android:id="@+id/frameFragmentContainer"
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="@string/play_video" />
+        android:layout_height="match_parent">
 
-    <VideoView
-        android:id="@+id/videoView"
-        android:layout_width="match_parent"
-        android:layout_height="match_parent" />
+    </FrameLayout>
+
 </LinearLayout>
