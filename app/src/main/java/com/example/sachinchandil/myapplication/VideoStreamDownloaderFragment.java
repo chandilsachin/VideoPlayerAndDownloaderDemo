@@ -6,6 +6,7 @@ import android.net.Uri;
 import android.os.AsyncTask;
 import android.os.Bundle;
 import android.support.v4.app.Fragment;
+import android.text.format.Formatter;
 import android.util.Log;
 import android.view.LayoutInflater;
 import android.view.SurfaceHolder;
@@ -16,14 +17,20 @@ import android.widget.Button;
 import android.widget.MediaController;
 
 import java.io.BufferedInputStream;
+import java.io.BufferedOutputStream;
 import java.io.File;
-import java.io.FileDescriptor;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.net.HttpURLConnection;
+import java.net.InetAddress;
 import java.net.MalformedURLException;
+import java.net.NetworkInterface;
+import java.net.ServerSocket;
+import java.net.Socket;
+import java.net.SocketException;
 import java.net.URL;
+import java.util.Enumeration;
 
 
 /**
@@ -37,8 +44,8 @@ public class VideoStreamDownloaderFragment extends Fragment {
     private Button btnPlay;
     private SurfaceView surfaceView;
     private SurfaceHolder surfaceHolder;
-
-    String videoPath = "http://www.sample-videos.com/video/mp4/720/big_buck_bunny_720p_5mb.mp4";
+    int port = 3639;
+    String videoPath = "http://127.0.0.1:" + port;//"http://www.sample-videos.com/video/mp4/720/big_buck_bunny_720p_5mb.mp4";
     String outFilePath = "";//
 
     File outFile;
@@ -70,20 +77,20 @@ public class VideoStreamDownloaderFragment extends Fragment {
         // Inflate the layout for this fragment
 
         View v = inflater.inflate(R.layout.fragment_video_stream_downloader, container, false);
-        ;
+
         surfaceView = (SurfaceView) v.findViewById(R.id.surfaceViewVideo);
         surfaceHolder = surfaceView.getHolder();
         outFilePath = getActivity().getExternalFilesDir("/") + "/video.mp4";
-        try {
-            FileOutputStream fos = new FileOutputStream(new File(outFilePath), true);
-            FileInputStream in = new FileInputStream(outFilePath);
-            playVideo(in.getFD());
-        } catch (IOException e) {
-            e.printStackTrace();
-        }
-
 
         prepareVideoView(v);
+        VideoStreamServer server = new VideoStreamServer();
+        server.startServer();
+        //playVideo("http://127.0.0.1:3637");
+        try {
+            System.out.println(getLocalIpAddress());
+        } catch (SocketException e) {
+            e.printStackTrace();
+        }
 /*
         if (ContextCompat.checkSelfPermission(getActivity(), Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
             if (ActivityCompat.shouldShowRequestPermissionRationale(getActivity(), Manifest.permission.ACCESS_FINE_LOCATION)) {
@@ -104,13 +111,33 @@ public class VideoStreamDownloaderFragment extends Fragment {
         btnPlay.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                new VideoDownloader().execute(videoPath);
+                new VideoDownloader().execute(videoPath, getActivity().getExternalFilesDir("/") + "/video1.mp4");
             }
         });
 
 
     }
 
+    public String getLocalIpAddress() throws SocketException {
+        try {
+            for (Enumeration<NetworkInterface> en = NetworkInterface.getNetworkInterfaces(); en.hasMoreElements(); ) {
+                NetworkInterface intf = en.nextElement();
+                for (Enumeration<InetAddress> enumIpAddr = intf.getInetAddresses(); enumIpAddr.hasMoreElements(); ) {
+                    InetAddress inetAddress = enumIpAddr.nextElement();
+                    if (!inetAddress.isLoopbackAddress()) {
+                        String ip = Formatter.formatIpAddress(inetAddress.hashCode());
+                        Log.i("tag", "***** IP=" + ip);
+                        return ip;
+                    }
+                }
+            }
+        } catch (SocketException ex) {
+            Log.e("tag", ex.toString());
+        }
+        return null;
+    }
+
+    int fileLength;
     class VideoDownloader extends AsyncTask<String, Integer, Void> {
 
         @Override
@@ -122,10 +149,10 @@ public class VideoStreamDownloaderFragment extends Fragment {
             BufferedInputStream input = null;
             try {
                 outFile.createNewFile();
-                final FileOutputStream out = new FileOutputStream(outFile, true);
+                final FileOutputStream out = new FileOutputStream(params[1]);
 
                 try {
-                    URL url = new URL(videoPath);
+                    URL url = new URL(params[0]);
 
                     HttpURLConnection connection = (HttpURLConnection) url.openConnection();
                     connection.connect();
@@ -135,50 +162,33 @@ public class VideoStreamDownloaderFragment extends Fragment {
                     int fileLength = connection.getContentLength();
 
                     input = new BufferedInputStream(connection.getInputStream());
-                    byte data[] = new byte[2048];
+                    byte data[] = new byte[4096];
                     long readBytes = 0;
                     int len;
                     boolean flag = true;
                     int readb = 0;
                     while ((len = input.read(data)) != -1) {
                         out.write(data, 0, len);
+                        out.flush();
                         readBytes += len;
                         readb += len;
-                        if (readb > 1000000) {
-                            out.flush();
-                            getActivity().runOnUiThread(new Runnable() {
-                                @Override
-                                public void run() {
-                                    try {
-                                        playVideo(out.getFD());
-                                    } catch (IOException e) {
-                                        e.printStackTrace();
-                                    }
-                                }
-                            });
-
-                            readb = 0;
-                            break;
-                        }
                         Log.w("download", (readBytes / 1024) + "kb of " + (fileLength / 1024) + "kb");
                     }
-
-
                 } catch (MalformedURLException e) {
                     e.printStackTrace();
                 } catch (IOException e) {
                     e.printStackTrace();
                 } finally {
-                    if (out != null)
+                    if (out != null) {
                         out.flush();
-                    out.close();
+                        out.close();
+                    }
                     if (input != null)
                         input.close();
                 }
             } catch (IOException e) {
                 e.printStackTrace();
             }
-
             return null;
         }
 
@@ -191,7 +201,7 @@ public class VideoStreamDownloaderFragment extends Fragment {
         }
     }
 
-    private void playVideo(final FileDescriptor fd) {
+    private void playVideo(final String url) {
 
 
         surfaceHolder.addCallback(new SurfaceHolder.Callback() {
@@ -200,9 +210,10 @@ public class VideoStreamDownloaderFragment extends Fragment {
                 player = new MediaPlayer();
                 player.setDisplay(holder);
 
-                Uri source = Uri.parse("file://" + outFilePath);
+                Uri source = Uri.parse(url);
                 try {
-                    player.setDataSource(fd);
+
+                    player.setDataSource(url);
                     player.setOnPreparedListener(new MediaPlayer.OnPreparedListener() {
                         @Override
                         public void onPrepared(MediaPlayer mp) {
@@ -228,7 +239,6 @@ public class VideoStreamDownloaderFragment extends Fragment {
         });
     }
 
-
     @Override
     public void onAttach(Context context) {
         super.onAttach(context);
@@ -239,4 +249,77 @@ public class VideoStreamDownloaderFragment extends Fragment {
     public void onDetach() {
         super.onDetach();
     }
+
+    class VideoStreamServer {
+
+        public void startServer() {
+            outFile = new File(outFilePath);
+            Runnable videoStreamTask = new Runnable() {
+                @Override
+                public void run() {
+                    try {
+                        ServerSocket socket = new ServerSocket(port);
+
+
+                        System.out.println("Waiting for client to connect.");
+                        while (true) {
+                            Socket client = socket.accept();
+
+                            BufferedOutputStream os = new BufferedOutputStream(client.getOutputStream());
+                            BufferedInputStream in = new BufferedInputStream(new FileInputStream(outFile));
+
+                            StringBuilder sb = new StringBuilder();
+                            sb.append("HTTP/1.1 200 OK\r\n");
+                            sb.append("Content-Type: video/mp4 \r\n");
+                            sb.append("Accept-Ranges: bytes\r\n");
+                            sb.append("\r\n");
+
+
+                            byte[] data = new byte[200];
+                            int length;
+                            System.out.println("Thread Started");
+                            //System.setProperty("http.keepAlive", "false");
+                            os.write(sb.toString().getBytes());
+                            while ((length = in.read(data)) != -1) {
+                                os.write(data, 0, length);
+                            }
+                            os.flush();
+                            os.close();
+                            client.close();
+                            socket.close();
+                            break;
+                        }
+                    } catch (IOException e) {
+                        e.printStackTrace();
+                    }
+
+                }
+            };
+
+            Thread streamServer = new Thread(videoStreamTask);
+            streamServer.start();
+        }
+
+    }
+
+    /*class VideoTask implements Runnable {
+        private Socket clientSocket;
+
+        public VideoTask(Socket clientSocket) {
+            this.clientSocket = clientSocket;
+        }
+
+
+        @Override
+        public void run() {
+            System.out.println("client started");
+
+
+            try {
+                clientSocket.close();
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+        }
+    }*/
 }
