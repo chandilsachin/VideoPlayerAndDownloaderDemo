@@ -1,11 +1,16 @@
 package com.example.sachinchandil.myapplication;
 
+import android.Manifest;
 import android.content.Context;
+import android.content.pm.PackageManager;
 import android.media.MediaPlayer;
 import android.net.Uri;
 import android.os.AsyncTask;
 import android.os.Bundle;
+import android.os.Environment;
+import android.support.v4.app.ActivityCompat;
 import android.support.v4.app.Fragment;
+import android.support.v4.content.ContextCompat;
 import android.text.format.Formatter;
 import android.util.Log;
 import android.view.LayoutInflater;
@@ -15,9 +20,11 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.widget.Button;
 import android.widget.MediaController;
+import android.widget.Toast;
 
 import java.io.BufferedInputStream;
 import java.io.BufferedOutputStream;
+import java.io.Externalizable;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
@@ -45,7 +52,8 @@ public class VideoStreamDownloaderFragment extends Fragment {
     private SurfaceView surfaceView;
     private SurfaceHolder surfaceHolder;
     int port = 3639;
-    String videoPath = "http://127.0.0.1:" + port;//"http://www.sample-videos.com/video/mp4/720/big_buck_bunny_720p_5mb.mp4";
+    String videoPath = "http://127.0.0.1:" + port;//"http://techslides.com/demos/sample-videos/small.mp4";
+
     String outFilePath = "";//
 
     File outFile;
@@ -80,27 +88,18 @@ public class VideoStreamDownloaderFragment extends Fragment {
 
         surfaceView = (SurfaceView) v.findViewById(R.id.surfaceViewVideo);
         surfaceHolder = surfaceView.getHolder();
-        outFilePath = getActivity().getExternalFilesDir("/") + "/video.mp4";
+        outFilePath = Environment.getExternalStorageDirectory() + "/video.mp4";
 
         prepareVideoView(v);
-        VideoStreamServer server = new VideoStreamServer();
-        server.startServer();
-        //playVideo("http://127.0.0.1:3637");
+
+        startServer();
         try {
             System.out.println(getLocalIpAddress());
         } catch (SocketException e) {
             e.printStackTrace();
         }
 /*
-        if (ContextCompat.checkSelfPermission(getActivity(), Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
-            if (ActivityCompat.shouldShowRequestPermissionRationale(getActivity(), Manifest.permission.ACCESS_FINE_LOCATION)) {
-                ActivityCompat.requestPermissions(getActivity(), new String[]{Manifest.permission.ACCESS_FINE_LOCATION}, 1);
-            } else {
-                ActivityCompat.requestPermissions(getActivity(), new String[]{Manifest.permission.ACCESS_FINE_LOCATION}, 1);
-            }
-        } else {
-            Toast.makeText(getActivity(), "Permission is granted", Toast.LENGTH_SHORT).show();
-        }*/
+        */
         return v;
     }
 
@@ -111,7 +110,16 @@ public class VideoStreamDownloaderFragment extends Fragment {
         btnPlay.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                new VideoDownloader().execute(videoPath, getActivity().getExternalFilesDir("/") + "/video1.mp4");
+                if (ContextCompat.checkSelfPermission(getActivity(), Manifest.permission.WRITE_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED) {
+                    if (ActivityCompat.shouldShowRequestPermissionRationale(getActivity(), Manifest.permission.WRITE_EXTERNAL_STORAGE)) {
+                        ActivityCompat.requestPermissions(getActivity(), new String[]{Manifest.permission.WRITE_EXTERNAL_STORAGE}, 1);
+                    } else {
+                        ActivityCompat.requestPermissions(getActivity(), new String[]{Manifest.permission.WRITE_EXTERNAL_STORAGE}, 1);
+                    }
+                } else {
+                    Toast.makeText(getActivity(), "Permission is granted", Toast.LENGTH_SHORT).show();
+                    new VideoDownloader().execute(videoPath, outFilePath);
+                }
             }
         });
 
@@ -144,11 +152,9 @@ public class VideoStreamDownloaderFragment extends Fragment {
         protected Void doInBackground(String... params) {
 
 
-            outFile = new File(outFilePath);
 
             BufferedInputStream input = null;
             try {
-                outFile.createNewFile();
                 final FileOutputStream out = new FileOutputStream(params[1]);
 
                 try {
@@ -248,6 +254,14 @@ public class VideoStreamDownloaderFragment extends Fragment {
     @Override
     public void onDetach() {
         super.onDetach();
+    }
+
+    private void startServer(){
+        LocalFileStreamingServer server = new LocalFileStreamingServer(new File(outFilePath));
+        server.init("127.0.0.1");
+        server.start();
+        String url = server.getFileUrl();
+        playVideo(url);
     }
 
     class VideoStreamServer {
