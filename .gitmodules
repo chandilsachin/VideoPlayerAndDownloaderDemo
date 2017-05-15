@@ -1,0 +1,3 @@
+[submodule "VideoDownloadAndPlay"]
+	path = videodownloadandplay
+	url = https://github.com/chandilsachin/VideoDownloadAndPlay.git
